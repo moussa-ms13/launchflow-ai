@@ -1,0 +1,855 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: LaunchFlow AI — Autonomous GTM Strategy Orchestrator API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: Auth
+    description: Browser and mobile authentication endpoints.
+  - name: projects
+    description: GTM project management
+  - name: assets
+    description: Marketing asset management
+  - name: dashboard
+    description: Dashboard and analytics
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /auth/user:
+    get:
+      tags: [Auth]
+      operationId: getCurrentAuthUser
+      summary: Get the currently authenticated user
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationSessionHeader'
+        - $ref: '#/components/parameters/SessionCookie'
+      responses:
+        '200':
+          description: Auth status resolved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthUserEnvelope'
+  /login:
+    get:
+      tags: [Auth]
+      operationId: beginBrowserLogin
+      summary: Start the browser OIDC login flow
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          description: Relative path to redirect to after login (must start with `/`). Defaults to `/`.
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to the OIDC authorization endpoint.
+  /callback:
+    get:
+      tags: [Auth]
+      operationId: handleBrowserLoginCallback
+      summary: Complete the browser OIDC login flow
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: iss
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uri
+      responses:
+        '302':
+          description: Redirect to the returnTo path on success or /api/login on failure.
+  /logout:
+    get:
+      tags: [Auth]
+      operationId: logoutBrowserSession
+      summary: Clear the session and begin OIDC logout
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationSessionHeader'
+        - $ref: '#/components/parameters/SessionCookie'
+      responses:
+        '302':
+          description: Redirect to the OIDC provider logout URL.
+  /mobile-auth/token-exchange:
+    post:
+      tags: [Auth]
+      operationId: exchangeMobileAuthorizationCode
+      summary: Exchange a mobile OIDC code for a session token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MobileTokenExchangeRequest'
+      responses:
+        '200':
+          description: Session created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileTokenExchangeSuccess'
+        '400':
+          description: Missing or invalid required fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '401':
+          description: Token did not contain usable claims.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+        '500':
+          description: Token exchange failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /mobile-auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logoutMobileSession
+      summary: Delete a mobile session token
+      parameters:
+        - $ref: '#/components/parameters/AuthorizationSessionHeader'
+      responses:
+        '200':
+          description: Logout processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutSuccess'
+
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List all GTM projects for the current user
+      responses:
+        "200":
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [projects]
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/GtmProject"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a new GTM project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectBody"
+      responses:
+        "201":
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GtmProject"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /projects/{projectId}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get a GTM project by ID
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project details with competitors and assets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GtmProjectDetail"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      summary: Update a GTM project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectBody"
+      responses:
+        "200":
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GtmProject"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete a GTM project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /projects/{projectId}/approve:
+    post:
+      operationId: approveProject
+      tags: [projects]
+      summary: Approve a GTM project (human-in-the-loop gate)
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveProjectBody"
+      responses:
+        "200":
+          description: Project approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GtmProject"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /projects/{projectId}/run-agents:
+    post:
+      operationId: runProjectAgents
+      tags: [projects]
+      summary: Kick off AI agent processing for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Agents started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GtmProject"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /projects/{projectId}/assets:
+    get:
+      operationId: listProjectAssets
+      tags: [assets]
+      summary: List all marketing assets for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: List of marketing assets
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [assets]
+                properties:
+                  assets:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/MarketingAsset"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /projects/{projectId}/assets/{assetId}:
+    get:
+      operationId: getProjectAsset
+      tags: [assets]
+      summary: Get a specific marketing asset
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/AssetId"
+      responses:
+        "200":
+          description: Marketing asset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketingAsset"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+    patch:
+      operationId: updateProjectAsset
+      tags: [assets]
+      summary: Update a marketing asset (approve, add notes)
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - $ref: "#/components/parameters/AssetId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAssetBody"
+      responses:
+        "200":
+          description: Updated asset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketingAsset"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /projects/{projectId}/competitors:
+    get:
+      operationId: listProjectCompetitors
+      tags: [projects]
+      summary: List competitor data for a project
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: List of competitor analysis entries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [competitors]
+                properties:
+                  competitors:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CompetitorData"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [dashboard]
+      summary: Get aggregate dashboard stats for the current user
+      responses:
+        "200":
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+components:
+  parameters:
+    AuthorizationSessionHeader:
+      name: Authorization
+      in: header
+      required: false
+      description: Opaque session token — `Bearer <sid>`.
+      schema:
+        type: string
+    SessionCookie:
+      name: sid
+      in: cookie
+      required: false
+      description: Browser session cookie.
+      schema:
+        type: string
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AssetId:
+      name: assetId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    AuthUser:
+      type: object
+      required: [id, email, firstName, lastName, profileImageUrl]
+      properties:
+        id:
+          type: string
+        email:
+          type: [string, 'null']
+          format: email
+        firstName:
+          type: [string, 'null']
+        lastName:
+          type: [string, 'null']
+        profileImageUrl:
+          type: [string, 'null']
+    AuthUserEnvelope:
+      type: object
+      required: [user]
+      properties:
+        user:
+          oneOf:
+            - $ref: '#/components/schemas/AuthUser'
+            - type: 'null'
+    MobileTokenExchangeRequest:
+      type: object
+      required: [code, code_verifier, redirect_uri, state]
+      properties:
+        code:
+          type: string
+          minLength: 1
+        code_verifier:
+          type: string
+          minLength: 1
+        redirect_uri:
+          type: string
+          minLength: 1
+          format: uri
+        state:
+          type: string
+          minLength: 1
+        nonce:
+          type: string
+          minLength: 1
+    MobileTokenExchangeSuccess:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+    LogoutSuccess:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          const: true
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    SuccessEnvelope:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+
+    GtmProject:
+      type: object
+      required:
+        - id
+        - userId
+        - productName
+        - productDescription
+        - targetAudience
+        - status
+        - competitorAgentStatus
+        - marketingAgentStatus
+        - landingPageAgentStatus
+        - isApprovedByHuman
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        productName:
+          type: string
+        productDescription:
+          type: string
+        targetAudience:
+          type: string
+        websiteUrl:
+          type: [string, 'null']
+        budget:
+          type: [string, 'null']
+        launchDate:
+          type: [string, 'null']
+          format: date-time
+        status:
+          type: string
+          enum: [pending, processing, awaiting_approval, approved, deployed, failed]
+        competitorAgentStatus:
+          type: string
+          enum: [idle, running, completed, error]
+        marketingAgentStatus:
+          type: string
+          enum: [idle, running, completed, error]
+        landingPageAgentStatus:
+          type: string
+          enum: [idle, running, completed, error]
+        isApprovedByHuman:
+          type: boolean
+        approvedAt:
+          type: [string, 'null']
+          format: date-time
+        approvalNotes:
+          type: [string, 'null']
+        positioningStatement:
+          type: [string, 'null']
+        targetPersona:
+          nullable: true
+        pricingRecommendation:
+          nullable: true
+        processingStartedAt:
+          type: [string, 'null']
+          format: date-time
+        processingCompletedAt:
+          type: [string, 'null']
+          format: date-time
+        processingDurationMs:
+          type: [integer, 'null']
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    GtmProjectDetail:
+      allOf:
+        - $ref: "#/components/schemas/GtmProject"
+        - type: object
+          properties:
+            competitors:
+              type: array
+              items:
+                $ref: "#/components/schemas/CompetitorData"
+            assets:
+              type: array
+              items:
+                $ref: "#/components/schemas/MarketingAsset"
+
+    CompetitorData:
+      type: object
+      required: [id, projectId, competitorName, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        competitorName:
+          type: string
+        websiteUrl:
+          type: [string, 'null']
+        pricingTiers:
+          nullable: true
+        keyFeatures:
+          nullable: true
+        targetSegments:
+          nullable: true
+        weaknesses:
+          nullable: true
+        strengths:
+          nullable: true
+        positioningAngle:
+          type: [string, 'null']
+        reviewSentimentScore:
+          type: [integer, 'null']
+        rawSearchData:
+          nullable: true
+        sourceUrls:
+          nullable: true
+        agentConfidenceScore:
+          type: [integer, 'null']
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    MarketingAsset:
+      type: object
+      required:
+        - id
+        - projectId
+        - assetType
+        - title
+        - content
+        - version
+        - isActive
+        - isApproved
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        assetType:
+          type: string
+          enum: [meta_ad_copy, cold_email_sequence, blog_post, landing_page_html, positioning_doc, social_post]
+        title:
+          type: string
+        content:
+          type: string
+        contentJson:
+          nullable: true
+        version:
+          type: integer
+        isActive:
+          type: boolean
+        isApproved:
+          type: boolean
+        reviewNotes:
+          type: [string, 'null']
+        approvedAt:
+          type: [string, 'null']
+          format: date-time
+        modelUsed:
+          type: [string, 'null']
+        tokensUsed:
+          type: [integer, 'null']
+        generationDurationMs:
+          type: [integer, 'null']
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateProjectBody:
+      type: object
+      required: [productName, productDescription, targetAudience]
+      properties:
+        productName:
+          type: string
+          minLength: 1
+        productDescription:
+          type: string
+          minLength: 1
+        targetAudience:
+          type: string
+          minLength: 1
+        websiteUrl:
+          type: string
+        budget:
+          type: string
+        launchDate:
+          type: string
+          format: date-time
+
+    UpdateProjectBody:
+      type: object
+      properties:
+        productName:
+          type: string
+          minLength: 1
+        productDescription:
+          type: string
+          minLength: 1
+        targetAudience:
+          type: string
+          minLength: 1
+        websiteUrl:
+          type: string
+        budget:
+          type: string
+        launchDate:
+          type: string
+          format: date-time
+
+    ApproveProjectBody:
+      type: object
+      required: [approved]
+      properties:
+        approved:
+          type: boolean
+        notes:
+          type: string
+
+    UpdateAssetBody:
+      type: object
+      properties:
+        isApproved:
+          type: boolean
+        reviewNotes:
+          type: string
+
+    DashboardStats:
+      type: object
+      required:
+        - totalProjects
+        - projectsByStatus
+        - totalAssets
+        - approvedAssets
+        - recentProjects
+      properties:
+        totalProjects:
+          type: integer
+        projectsByStatus:
+          type: object
+          additionalProperties:
+            type: integer
+        totalAssets:
+          type: integer
+        approvedAssets:
+          type: integer
+        recentProjects:
+          type: array
+          items:
+            $ref: "#/components/schemas/GtmProject"
